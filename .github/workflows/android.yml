@@ -19,21 +19,9 @@ jobs:
         cache: gradle
 
     - name: Build debug APK
-      run: |
-        ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
-        echo "---BUILD LOG END---"
-        echo "APK files:"
-        find . -name "*.apk" 2>/dev/null
-
-    - name: Upload build log
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: build.log
+      run: ./gradlew assembleDebug
 
     - name: Upload APK
-      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
