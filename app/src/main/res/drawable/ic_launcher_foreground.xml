@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple paw/claw icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C56,30 58,32 58,35 C58,38 56,40 54,40 C52,40 50,38 50,35 C50,32 52,30 54,30"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,38 C44,38 46,40 46,43 C46,46 44,48 42,48 C40,48 38,46 38,43 C38,40 40,38 42,38"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,38 C68,38 70,40 70,43 C70,46 68,48 66,48 C64,48 62,46 62,43 C62,40 64,38 66,38"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,48 C60,48 66,54 66,62 C66,70 60,76 54,76 C48,76 42,70 42,62 C42,54 48,48 54,48"/>
+</vector>

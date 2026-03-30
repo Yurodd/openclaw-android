@@ -1,9 +1,10 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
 android {
-    namespace 'com.test.app'
+    namespace 'com.aikeyboard.app'
     compileSdk 34
 
     defaultConfig {
@@ -18,5 +19,8 @@ android {
 }
 
 dependencies {
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib'
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.10.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
 }
