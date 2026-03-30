@@ -8,6 +8,7 @@ android {
     compileSdk 34
 
     defaultConfig {
+        applicationId "com.aikeyboard.app"
         minSdk 26
         targetSdk 34
     }
