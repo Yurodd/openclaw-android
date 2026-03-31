@@ -16,6 +16,7 @@ class KeyboardView(
 ) : LinearLayout(service) {
 
     private var isShifted = false
+    private var isSymbols = false
     private val repeatHandler = Handler(Looper.getMainLooper())
     private var backspaceRepeating = false
 
@@ -58,13 +59,21 @@ class KeyboardView(
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_HORIZONTAL
             }
-
             row.forEach { key -> rowLayout.addView(createKeyView(key)) }
             addView(rowLayout)
         }
     }
 
     private fun buildRows(): List<List<String>> {
+        if (isSymbols) {
+            return listOf(
+                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
+                listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"),
+                listOf("*", "\"", "'", ":", ";", "!", "?", "/", "backspace"),
+                listOf("ABC", ",", "space", ".", "return")
+            )
+        }
+
         val rows = mutableListOf<List<String>>()
         if (preferencesManager.numberRowEnabled) {
             rows.add(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
@@ -115,9 +124,7 @@ class KeyboardView(
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     v.setBackgroundColor(getKeyBackground(key))
-                    if (key == "backspace") {
-                        stopBackspaceRepeat()
-                    }
+                    if (key == "backspace") stopBackspaceRepeat()
                     false
                 }
                 else -> false
@@ -134,13 +141,14 @@ class KeyboardView(
             "space" -> "space"
             "return" -> "↵"
             "123" -> "123"
-            else -> if (isShifted && key.length == 1 && key[0].isLetter()) key.uppercase() else key
+            "ABC" -> "ABC"
+            else -> if (!isSymbols && isShifted && key.length == 1 && key[0].isLetter()) key.uppercase() else key
         }
     }
 
     private fun getKeyBackground(key: String): Int {
         return when (key) {
-            "shift", "backspace", "123", "return" -> specialBgColor
+            "shift", "backspace", "123", "ABC", "return" -> specialBgColor
             else -> normalBgColor
         }
     }
@@ -149,7 +157,7 @@ class KeyboardView(
         return when (key) {
             "space" -> Pair((keyWidth * 5.4f).toInt(), keyHeight)
             "backspace", "return" -> Pair((keyWidth * 1.7f).toInt(), keyHeight)
-            "shift", "123" -> Pair((keyWidth * 1.3f).toInt(), keyHeight)
+            "shift", "123", "ABC" -> Pair((keyWidth * 1.3f).toInt(), keyHeight)
             else -> Pair(keyWidth, keyHeight)
         }
     }
@@ -164,11 +172,18 @@ class KeyboardView(
             "backspace" -> service.handleBackspace()
             "space" -> service.handleSpace()
             "return" -> service.handleReturn()
-            "123" -> { /* placeholder for symbols layout */ }
-            else -> service.handleCharacter(if (isShifted) key.uppercase() else key)
+            "123" -> {
+                isSymbols = true
+                rebuildKeys()
+            }
+            "ABC" -> {
+                isSymbols = false
+                rebuildKeys()
+            }
+            else -> service.handleCharacter(if (!isSymbols && isShifted) key.uppercase() else key)
         }
 
-        if (key != "shift" && isShifted && key.length == 1 && key[0].isLetter()) {
+        if (!isSymbols && key != "shift" && isShifted && key.length == 1 && key[0].isLetter()) {
             isShifted = false
             rebuildKeys()
         }

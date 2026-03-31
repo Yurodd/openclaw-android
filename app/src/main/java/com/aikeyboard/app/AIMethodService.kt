@@ -10,6 +10,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -73,11 +74,18 @@ class AIMethodService : InputMethodService() {
         return container
     }
 
-    override fun onStartInput(attribute: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         currentWord.clear()
         currentSentence = ""
         updateSuggestions(listOf("", "", ""))
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        if (::keyboardView.isInitialized) {
+            keyboardView.reloadLayout()
+        }
     }
 
     fun onKeyPressed() {
@@ -102,29 +110,15 @@ class AIMethodService : InputMethodService() {
     fun handleCharacter(char: String) {
         currentInputConnection?.commitText(char, 1)
         currentWord.append(char)
-
-        val predictions = predictionEngine.predictNextWord(
-            currentSentence.trim(),
-            currentWord.toString()
-        )
-
-        val prefix = currentWord.toString()
-        val filtered = predictions.filter { it.startsWith(prefix, ignoreCase = true) || it.isEmpty() }
-        updateSuggestions(filtered.take(3).padEnd(3, ""))
+        updateSuggestions(safePredictions(currentWord.toString()))
     }
 
     fun handleBackspace() {
         if (currentWord.isNotEmpty()) {
             currentWord.deleteCharAt(currentWord.length - 1)
         }
-
         currentInputConnection?.deleteSurroundingText(1, 0)
-
-        val predictions = predictionEngine.predictNextWord(
-            currentSentence.trim(),
-            currentWord.toString()
-        )
-        updateSuggestions(predictions.take(3).padEnd(3, ""))
+        updateSuggestions(safePredictions(currentWord.toString()))
     }
 
     fun handleSpace() {
@@ -133,15 +127,13 @@ class AIMethodService : InputMethodService() {
         if (word.isNotEmpty()) {
             userHistoryManager.addTypedWord(word)
             preferencesManager.incrementWordsTyped()
-
             currentSentence = if (currentSentence.isBlank()) word else "$currentSentence $word"
             userHistoryManager.addPhrase(currentSentence)
             currentWord.clear()
         }
 
         currentInputConnection?.commitText(" ", 1)
-        val predictions = predictionEngine.predictNextWord(currentSentence.trim(), "")
-        updateSuggestions(predictions.take(3).padEnd(3, ""))
+        updateSuggestions(safePredictions(""))
     }
 
     fun handleReturn() {
@@ -166,9 +158,22 @@ class AIMethodService : InputMethodService() {
 
         currentSentence = if (currentSentence.isBlank()) suggestion else "$currentSentence $suggestion"
         currentWord.clear()
+        updateSuggestions(safePredictions(""))
+    }
 
-        val predictions = predictionEngine.predictNextWord(currentSentence.trim(), "")
-        updateSuggestions(predictions.take(3).padEnd(3, ""))
+    private fun safePredictions(prefix: String): List<String> {
+        return try {
+            val predictions = predictionEngine.predictNextWord(currentSentence.trim(), prefix)
+            if (prefix.isNotEmpty()) {
+                predictions.filter { it.startsWith(prefix, ignoreCase = true) || it.isEmpty() }
+                    .take(3)
+                    .padEnd(3, "")
+            } else {
+                predictions.take(3).padEnd(3, "")
+            }
+        } catch (_: Exception) {
+            listOf("", "", "")
+        }
     }
 
     fun updateSuggestions(suggestions: List<String>) {
