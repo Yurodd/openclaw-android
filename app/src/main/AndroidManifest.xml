@@ -17,6 +17,9 @@
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
             </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
         </service>
 
         <activity
