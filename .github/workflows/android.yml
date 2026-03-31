@@ -19,7 +19,7 @@ jobs:
         cache: gradle
 
     - name: Build debug APK
-      run: ./gradlew assembleDebug 2>&1 | tee build.log ; echo "APK_LIST:" ; find . -name "*.apk" 2>/dev/null
+      run: ./gradlew assembleDebug --info 2>&1 | tee build.log
 
     - name: Upload build log
       if: always()
