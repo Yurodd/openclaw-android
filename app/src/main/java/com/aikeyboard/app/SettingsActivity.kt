@@ -1,10 +1,13 @@
 package com.aikeyboard.app
 
+import android.graphics.Typeface
 import android.os.Bundle
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -32,34 +35,54 @@ class SettingsActivity : AppCompatActivity() {
         val title = TextView(this).apply {
             text = "AI Keyboard Settings"
             textSize = 24f
-            setPadding(0, 0, 0, 48)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, 24)
         }
         content.addView(title)
 
+        val intro = TextView(this).apply {
+            text = "Helpful defaults are on by default: max keyboard size, number row, emoji, clipboard, and punctuation shortcuts."
+            textSize = 14f
+            setPadding(0, 0, 0, 24)
+        }
+        content.addView(intro)
+
+        content.addView(sectionTitle("Typing"))
         content.addView(makeSwitch(
-            label = "Enable Learning",
+            label = "Enable learning",
             checked = prefsManager.learningEnabled
         ) { prefsManager.learningEnabled = it })
-
         content.addView(makeSwitch(
-            label = "Enable Number Row",
+            label = "Show number row",
             checked = prefsManager.numberRowEnabled
         ) { prefsManager.numberRowEnabled = it })
-
         content.addView(makeSwitch(
-            label = "Haptic Feedback",
+            label = "Punctuation shortcuts row",
+            checked = prefsManager.punctuationShortcutsEnabled
+        ) { prefsManager.punctuationShortcutsEnabled = it })
+        content.addView(makeSwitch(
+            label = "Emoji panel key",
+            checked = prefsManager.emojiPanelEnabled
+        ) { prefsManager.emojiPanelEnabled = it })
+        content.addView(makeSwitch(
+            label = "Clipboard panel key",
+            checked = prefsManager.clipboardPanelEnabled
+        ) { prefsManager.clipboardPanelEnabled = it })
+        content.addView(makeSwitch(
+            label = "Haptic feedback",
             checked = prefsManager.hapticEnabled
         ) { prefsManager.hapticEnabled = it })
-
         content.addView(makeSwitch(
-            label = "Key Sound",
+            label = "Key sound",
             checked = prefsManager.soundEnabled
         ) { prefsManager.soundEnabled = it })
 
+        content.addView(sectionTitle("Layout"))
+
         val sizeTitle = TextView(this).apply {
-            text = "Keyboard Size"
+            text = "Keyboard size"
             textSize = 18f
-            setPadding(0, 36, 0, 8)
+            setPadding(0, 12, 0, 8)
         }
         content.addView(sizeTitle)
 
@@ -85,10 +108,28 @@ class SettingsActivity : AppCompatActivity() {
         }
         content.addView(sizeSeek)
 
+        content.addView(makeSpinnerRow(
+            title = "Theme",
+            options = KeyboardThemeOption.entries.map { it.label },
+            selectedIndex = KeyboardThemeOption.entries.indexOf(prefsManager.selectedTheme)
+        ) { selected ->
+            prefsManager.selectedTheme = KeyboardThemeOption.entries[selected]
+        })
+
+        content.addView(makeSpinnerRow(
+            title = "One-handed mode",
+            options = OneHandedMode.entries.map { it.label },
+            selectedIndex = OneHandedMode.entries.indexOf(prefsManager.oneHandedMode)
+        ) { selected ->
+            prefsManager.oneHandedMode = OneHandedMode.entries[selected]
+        })
+
+        content.addView(sectionTitle("Data"))
+
         val statsTitle = TextView(this).apply {
             text = "Statistics"
             textSize = 18f
-            setPadding(0, 32, 0, 16)
+            setPadding(0, 12, 0, 16)
         }
         content.addView(statsTitle)
 
@@ -102,12 +143,18 @@ class SettingsActivity : AppCompatActivity() {
         val accuracy = TextView(this).apply {
             text = "Prediction accuracy: ${String.format("%.1f", prefsManager.getPredictionAccuracy())}%"
             textSize = 16f
-            setPadding(0, 8, 0, 8)
+            setPadding(0, 8, 0, 16)
         }
         content.addView(accuracy)
 
+        val clearClipboardButton = Button(this).apply {
+            text = "Clear clipboard history"
+            setOnClickListener { prefsManager.clearClipboardHistory() }
+        }
+        content.addView(clearClipboardButton)
+
         val clearButton = Button(this).apply {
-            text = "Clear History"
+            text = "Clear learned history"
             setOnClickListener {
                 userHistoryManager.clearHistory()
                 prefsManager.totalWordsTyped = 0
@@ -118,15 +165,14 @@ class SettingsActivity : AppCompatActivity() {
         }
         content.addView(clearButton)
 
-        val featureTitle = TextView(this).apply {
-            text = "Current Features"
-            textSize = 18f
-            setPadding(0, 32, 0, 16)
-        }
-        content.addView(featureTitle)
-
+        content.addView(sectionTitle("What shipped"))
         val featureText = TextView(this).apply {
-            text = "• Next-word suggestions\n• Learned word history\n• Number row toggle\n• Adjustable keyboard size\n• Haptic and sound toggles\n• Long-press backspace repeat"
+            text = "• Theme support: Dark, Light, AMOLED\n" +
+                "• One-handed layout alignment (left / normal / right)\n" +
+                "• Emoji quick-insert panel\n" +
+                "• Clipboard history quick-insert panel\n" +
+                "• Punctuation shortcuts row + long-press .com / ?!\n" +
+                "• Number row, haptics, and max size default on"
             textSize = 14f
         }
         content.addView(featureText)
@@ -141,6 +187,39 @@ class SettingsActivity : AppCompatActivity() {
             textSize = 18f
             setPadding(0, 8, 0, 8)
             setOnCheckedChangeListener { _, isChecked -> onToggle(isChecked) }
+        }
+    }
+
+    private fun makeSpinnerRow(
+        title: String,
+        options: List<String>,
+        selectedIndex: Int,
+        onSelected: (Int) -> Unit
+    ): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 16, 0, 8)
+        }
+        row.addView(TextView(this).apply {
+            text = title
+            textSize = 18f
+            setPadding(0, 0, 0, 8)
+        })
+        val spinner = Spinner(this)
+        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
+        spinner.setSelection(selectedIndex.coerceAtLeast(0))
+        spinner.post { onSelected(spinner.selectedItemPosition) }
+        spinner.onItemSelectedListener = SimpleItemSelectedListener { position -> onSelected(position) }
+        row.addView(spinner)
+        return row
+    }
+
+    private fun sectionTitle(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 20f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 24, 0, 12)
         }
     }
 

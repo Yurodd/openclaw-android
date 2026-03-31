@@ -77,7 +77,6 @@ class PredictionEngine(private val userHistoryManager: UserHistoryManager) {
             "people", "into", "year", "your", "good", "some", "could", "them", "see", "other"
         )
 
-        private val vectorEmbeddings = VectorEmbeddings()
     }
 
     /**
@@ -102,11 +101,8 @@ class PredictionEngine(private val userHistoryManager: UserHistoryManager) {
             addRRFScores(rrfScores, ngramPredictions, sourceWeight = 2)
         }
 
-        // Source 3: Vector semantic similarity
-        if (words.isNotEmpty()) {
-            val vectorPredictions = getVectorPredictions(words)
-            addRRFScores(rrfScores, vectorPredictions, sourceWeight = 1)
-        }
+        // Source 3: Vector semantic similarity is disabled in the live IME path for stability.
+        // It can be re-enabled later once the typing path is proven solid on-device.
 
         // Sort and filter
         val sorted = rrfScores.entries
@@ -160,20 +156,6 @@ class PredictionEngine(private val userHistoryManager: UserHistoryManager) {
         results.addAll(userBigrams.take(2))
 
         return results.distinct()
-    }
-
-    /**
-     * Gets predictions using vector semantic similarity.
-     */
-    private fun getVectorPredictions(words: List<String>): List<String> {
-        if (words.isEmpty() || vectorEmbeddings.vocabularySize() == 0) {
-            return emptyList()
-        }
-
-        val similarWords = vectorEmbeddings.getSimilarFromContext(words, limit = 15)
-        return similarWords
-            .filter { it.second > 0.35f }
-            .map { it.first }
     }
 
     /**

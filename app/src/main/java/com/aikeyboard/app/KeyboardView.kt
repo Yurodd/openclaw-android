@@ -1,6 +1,5 @@
 package com.aikeyboard.app
 
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
@@ -23,15 +22,13 @@ class KeyboardView(
     private val scale: Float
         get() = preferencesManager.keyboardScalePercent / 100f
 
-    private val normalBgColor = Color.parseColor("#4A4A4A")
-    private val specialBgColor = Color.parseColor("#2D2D2D")
-    private val pressedBgColor = Color.parseColor("#707070")
-    private val keyTextColor = Color.WHITE
+    private val palette: KeyboardPalette
+        get() = KeyboardThemes.palette(preferencesManager.selectedTheme)
 
     private val keyWidth: Int
-        get() = (72 * scale).toInt()
+        get() = (48 * scale).toInt()
     private val keyHeight: Int
-        get() = (80 * scale).toInt()
+        get() = (56 * scale).toInt()
 
     private val backspaceRepeater = object : Runnable {
         override fun run() {
@@ -43,7 +40,6 @@ class KeyboardView(
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(Color.parseColor("#1A1A1A"))
         setPadding(dp(6), dp(6), dp(6), dp(6))
         rebuildKeys()
     }
@@ -54,42 +50,71 @@ class KeyboardView(
 
     private fun rebuildKeys() {
         removeAllViews()
+        val currentPalette = palette
+        setBackgroundColor(currentPalette.keyboardBackground)
+
+        val keyboardHost = LinearLayout(context).apply {
+            orientation = VERTICAL
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+            gravity = when (preferencesManager.oneHandedMode) {
+                OneHandedMode.LEFT -> Gravity.START
+                OneHandedMode.RIGHT -> Gravity.END
+                OneHandedMode.OFF -> Gravity.CENTER_HORIZONTAL
+            }
+        }
+
         buildRows().forEach { row ->
             val rowLayout = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_HORIZONTAL
             }
             row.forEach { key -> rowLayout.addView(createKeyView(key)) }
-            addView(rowLayout)
+            keyboardHost.addView(rowLayout)
         }
+        addView(keyboardHost)
     }
 
     private fun buildRows(): List<List<String>> {
-        if (isSymbols) {
-            return listOf(
-                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-                listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"),
-                listOf("*", "\"", "'", ":", ";", "!", "?", "/", "backspace"),
-                listOf("ABC", ",", "space", ".", "return")
-            )
+        val rows = mutableListOf<List<String>>()
+
+        if (preferencesManager.punctuationShortcutsEnabled) {
+            rows.add(listOf("!", "?", ",", ".", "'", ":", ";", "@", "#", "/"))
         }
 
-        val rows = mutableListOf<List<String>>()
+        if (isSymbols) {
+            rows.add(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
+            rows.add(listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"))
+            rows.add(listOf("*", "\"", "'", ":", ";", "!", "?", "/", "backspace"))
+            rows.add(listOf(symbolToggleLabel(), emojiToggleKey(), clipboardToggleKey(), ",", "space", ".", "return"))
+            return rows
+        }
+
         if (preferencesManager.numberRowEnabled) {
             rows.add(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
         }
         rows.add(listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"))
         rows.add(listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"))
         rows.add(listOf("shift", "z", "x", "c", "v", "b", "n", "m", "backspace"))
-        rows.add(listOf("123", ",", "space", ".", "return"))
+        rows.add(listOf(symbolToggleLabel(), emojiToggleKey(), clipboardToggleKey(), ",", "space", ".", "return"))
         return rows
     }
 
+    private fun emojiToggleKey(): String = if (preferencesManager.emojiPanelEnabled) "emoji" else "globe"
+
+    private fun clipboardToggleKey(): String = if (preferencesManager.clipboardPanelEnabled) "clip" else "prefs"
+
+    private fun symbolToggleLabel(): String = if (isSymbols) "ABC" else "123"
+
     private fun createKeyView(key: String): View {
+        val currentPalette = palette
         val textView = TextView(context).apply {
             text = getKeyLabel(key)
-            setTextColor(keyTextColor)
-            textSize = if (key == "space") 16f else 20f
+            setTextColor(currentPalette.keyTextColor)
+            textSize = when (key) {
+                "space" -> 15f
+                "emoji", "clip", "globe" -> 18f
+                else -> 18f
+            }
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setBackgroundColor(getKeyBackground(key))
@@ -107,19 +132,28 @@ class KeyboardView(
         }
 
         textView.setOnLongClickListener {
-            if (key == "backspace") {
-                backspaceRepeating = true
-                repeatHandler.post(backspaceRepeater)
-                true
-            } else {
-                false
+            when (key) {
+                "backspace" -> {
+                    backspaceRepeating = true
+                    repeatHandler.post(backspaceRepeater)
+                    true
+                }
+                "." -> {
+                    service.commitText(".com")
+                    true
+                }
+                "," -> {
+                    service.commitText("?! ")
+                    true
+                }
+                else -> false
             }
         }
 
         textView.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.setBackgroundColor(pressedBgColor)
+                    v.setBackgroundColor(currentPalette.pressedKeyBackground)
                     false
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -142,23 +176,33 @@ class KeyboardView(
             "return" -> "↵"
             "123" -> "123"
             "ABC" -> "ABC"
+            "emoji" -> "😊"
+            "clip" -> "📋"
+            "globe" -> "⚙"
+            "prefs" -> "⋯"
             else -> if (!isSymbols && isShifted && key.length == 1 && key[0].isLetter()) key.uppercase() else key
         }
     }
 
     private fun getKeyBackground(key: String): Int {
+        val currentPalette = palette
         return when (key) {
-            "shift", "backspace", "123", "ABC", "return" -> specialBgColor
-            else -> normalBgColor
+            "shift", "backspace", "123", "ABC", "return", "emoji", "clip", "globe", "prefs" -> currentPalette.specialKeyBackground
+            else -> currentPalette.keyBackground
         }
     }
 
     private fun getKeySize(key: String): Pair<Int, Int> {
+        val widthMultiplier = when (preferencesManager.oneHandedMode) {
+            OneHandedMode.OFF -> 1f
+            OneHandedMode.LEFT, OneHandedMode.RIGHT -> 0.86f
+        }
+        val baseWidth = (keyWidth * widthMultiplier).toInt().coerceAtLeast(dp(28))
         return when (key) {
-            "space" -> Pair((keyWidth * 5.4f).toInt(), keyHeight)
-            "backspace", "return" -> Pair((keyWidth * 1.7f).toInt(), keyHeight)
-            "shift", "123", "ABC" -> Pair((keyWidth * 1.3f).toInt(), keyHeight)
-            else -> Pair(keyWidth, keyHeight)
+            "space" -> Pair((baseWidth * 3.6f).toInt(), keyHeight)
+            "backspace", "return" -> Pair((baseWidth * 1.45f).toInt(), keyHeight)
+            "shift", "123", "ABC", "emoji", "clip", "globe", "prefs" -> Pair((baseWidth * 1.15f).toInt(), keyHeight)
+            else -> Pair(baseWidth, keyHeight)
         }
     }
 
@@ -180,7 +224,17 @@ class KeyboardView(
                 isSymbols = false
                 rebuildKeys()
             }
-            else -> service.handleCharacter(if (!isSymbols && isShifted) key.uppercase() else key)
+            "emoji" -> service.toggleEmojiPanel()
+            "clip" -> service.toggleClipboardPanel()
+            "globe", "prefs" -> service.hidePanels()
+            else -> {
+                val output = if (!isSymbols && isShifted) key.uppercase() else key
+                if (output.length == 1 && !output[0].isLetterOrDigit() && output[0] != '\'') {
+                    service.handlePunctuation(output)
+                } else {
+                    service.handleCharacter(output)
+                }
+            }
         }
 
         if (!isSymbols && key != "shift" && isShifted && key.length == 1 && key[0].isLetter()) {

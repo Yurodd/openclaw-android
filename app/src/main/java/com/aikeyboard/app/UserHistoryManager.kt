@@ -18,17 +18,18 @@ class UserHistoryManager(context: Context) {
         if (normalizedWord.isEmpty()) return
 
         val db = dbHelper.writableDatabase
-        val values = ContentValues().apply {
-            put(DatabaseHelper.COLUMN_WORD, normalizedWord)
-            put(DatabaseHelper.COLUMN_FREQUENCY, 1)
-            put(DatabaseHelper.COLUMN_LAST_USED, System.currentTimeMillis() / 1000)
-        }
-
-        db.insertWithOnConflict(
-            DatabaseHelper.TABLE_USER_WORDS,
-            null,
-            values,
-            android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
+        db.execSQL(
+            """
+            INSERT INTO ${DatabaseHelper.TABLE_USER_WORDS}(
+                ${DatabaseHelper.COLUMN_WORD},
+                ${DatabaseHelper.COLUMN_FREQUENCY},
+                ${DatabaseHelper.COLUMN_LAST_USED}
+            ) VALUES (?, 1, ?)
+            ON CONFLICT(${DatabaseHelper.COLUMN_WORD}) DO UPDATE SET
+                ${DatabaseHelper.COLUMN_FREQUENCY} = ${DatabaseHelper.COLUMN_FREQUENCY} + 1,
+                ${DatabaseHelper.COLUMN_LAST_USED} = excluded.${DatabaseHelper.COLUMN_LAST_USED}
+            """.trimIndent(),
+            arrayOf(normalizedWord, System.currentTimeMillis() / 1000)
         )
     }
 
