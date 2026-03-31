@@ -1,14 +1,17 @@
 package com.aikeyboard.app
 
+import android.content.Context
 import android.inputmethodservice.InputMethodService
+import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.view.KeyEvent
 import android.view.View
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.HorizontalScrollView
-import com.google.android.material.chip.Chip
 
 class AIMethodService : InputMethodService() {
 
@@ -16,8 +19,8 @@ class AIMethodService : InputMethodService() {
     private lateinit var predictionEngine: PredictionEngine
     private lateinit var userHistoryManager: UserHistoryManager
     private lateinit var preferencesManager: PreferencesManager
-
     private val handler = Handler(Looper.getMainLooper())
+
     private var currentWord = StringBuilder()
     private var currentSentence = ""
 
@@ -26,7 +29,6 @@ class AIMethodService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        
         preferencesManager = PreferencesManager(this)
         userHistoryManager = UserHistoryManager(this)
         predictionEngine = PredictionEngine(userHistoryManager)
@@ -38,13 +40,13 @@ class AIMethodService : InputMethodService() {
             setBackgroundColor(android.graphics.Color.parseColor("#1A1A1A"))
         }
 
-        // Suggestion bar
         suggestionBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(android.graphics.Color.parseColor("#2D2D2D"))
             setPadding(16, 12, 16, 12)
         }
 
+        suggestionChips.clear()
         repeat(3) {
             val chip = TextView(this@AIMethodService).apply {
                 text = ""
@@ -65,8 +67,7 @@ class AIMethodService : InputMethodService() {
 
         container.addView(suggestionBar)
 
-        // Keyboard view
-        keyboardView = KeyboardView(this)
+        keyboardView = KeyboardView(this, preferencesManager)
         container.addView(keyboardView)
 
         return container
@@ -79,77 +80,76 @@ class AIMethodService : InputMethodService() {
         updateSuggestions(listOf("", "", ""))
     }
 
+    fun onKeyPressed() {
+        if (preferencesManager.hapticEnabled) {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            vibrator?.let {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    it.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    it.vibrate(12)
+                }
+            }
+        }
+
+        if (preferencesManager.soundEnabled) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            audioManager?.playSoundEffect(AudioManager.FX_KEY_CLICK, 0.3f)
+        }
+    }
+
     fun handleCharacter(char: String) {
+        currentInputConnection?.commitText(char, 1)
         currentWord.append(char)
-        
-        // Get prefix predictions with current partial word
+
         val predictions = predictionEngine.predictNextWord(
-            currentSentence.takeLast(50),
+            currentSentence.trim(),
             currentWord.toString()
         )
-        
-        // Filter suggestions to start with current prefix when typing mid-word
-        if (currentWord.length >= 1) {
-            val prefix = currentWord.toString()
-            val filtered = predictions.filter { 
-                it.startsWith(prefix, ignoreCase = true) || it.isEmpty() 
-            }
-            updateSuggestions(filtered.take(3).padEnd(3, ""))
-        } else {
-            updateSuggestions(predictions.take(3).padEnd(3, ""))
-        }
-        
-        currentInputConnection?.commitText(char, 1)
+
+        val prefix = currentWord.toString()
+        val filtered = predictions.filter { it.startsWith(prefix, ignoreCase = true) || it.isEmpty() }
+        updateSuggestions(filtered.take(3).padEnd(3, ""))
     }
 
     fun handleBackspace() {
         if (currentWord.isNotEmpty()) {
             currentWord.deleteCharAt(currentWord.length - 1)
         }
-        
+
         currentInputConnection?.deleteSurroundingText(1, 0)
-        
+
         val predictions = predictionEngine.predictNextWord(
-            currentSentence.takeLast(50),
+            currentSentence.trim(),
             currentWord.toString()
         )
         updateSuggestions(predictions.take(3).padEnd(3, ""))
     }
 
     fun handleSpace() {
-        val word = currentWord.toString()
-        
+        val word = currentWord.toString().trim()
+
         if (word.isNotEmpty()) {
-            // Learn the word
             userHistoryManager.addTypedWord(word)
             preferencesManager.incrementWordsTyped()
-            
-            // Learn the phrase
-            if (currentSentence.isNotEmpty()) {
-                userHistoryManager.addPhrase(currentSentence.trim() + " " + word)
-            }
-            
-            currentSentence += " $word"
+
+            currentSentence = if (currentSentence.isBlank()) word else "$currentSentence $word"
+            userHistoryManager.addPhrase(currentSentence)
             currentWord.clear()
         }
-        
+
         currentInputConnection?.commitText(" ", 1)
-        
-        // Get next word predictions (no prefix after space)
-        val predictions = predictionEngine.predictNextWord(currentSentence.takeLast(50), "")
+        val predictions = predictionEngine.predictNextWord(currentSentence.trim(), "")
         updateSuggestions(predictions.take(3).padEnd(3, ""))
     }
 
     fun handleReturn() {
-        currentInputConnection?.sendKeyEvent(
-            android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER)
-        )
-        currentInputConnection?.sendKeyEvent(
-            android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER)
-        )
-        
+        currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+
         if (currentSentence.isNotEmpty() && currentWord.isNotEmpty()) {
-            userHistoryManager.addPhrase(currentSentence + " " + currentWord)
+            userHistoryManager.addPhrase("$currentSentence ${currentWord}")
             currentWord.clear()
         }
         currentSentence = ""
@@ -157,21 +157,17 @@ class AIMethodService : InputMethodService() {
     }
 
     fun commitSuggestion(suggestion: String) {
-        // Delete current partial word
         currentInputConnection?.deleteSurroundingText(currentWord.length, 0)
-        
-        // Commit the suggestion + space
         currentInputConnection?.commitText("$suggestion ", 1)
-        
-        // Learn
+
         userHistoryManager.addTypedWord(suggestion)
         preferencesManager.incrementWordsTyped()
-        
-        currentSentence += " $suggestion"
+        preferencesManager.incrementPredictions()
+
+        currentSentence = if (currentSentence.isBlank()) suggestion else "$currentSentence $suggestion"
         currentWord.clear()
-        
-        // Get next predictions (no prefix after committing a suggestion)
-        val predictions = predictionEngine.predictNextWord(currentSentence.takeLast(50), "")
+
+        val predictions = predictionEngine.predictNextWord(currentSentence.trim(), "")
         updateSuggestions(predictions.take(3).padEnd(3, ""))
     }
 

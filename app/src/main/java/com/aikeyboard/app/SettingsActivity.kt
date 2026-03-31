@@ -3,6 +3,8 @@ package com.aikeyboard.app
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -18,79 +20,128 @@ class SettingsActivity : AppCompatActivity() {
         prefsManager = PreferencesManager(this)
         userHistoryManager = UserHistoryManager(this)
 
-        val layout = LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
         }
 
-        // Title
+        val scrollView = ScrollView(this).apply {
+            addView(content)
+        }
+
         val title = TextView(this).apply {
             text = "AI Keyboard Settings"
             textSize = 24f
             setPadding(0, 0, 0, 48)
         }
-        layout.addView(title)
+        content.addView(title)
 
-        // Learning toggle
-        val learningSwitch = Switch(this).apply {
-            text = "Enable Learning"
-            isChecked = prefsManager.learningEnabled
+        content.addView(makeSwitch(
+            label = "Enable Learning",
+            checked = prefsManager.learningEnabled
+        ) { prefsManager.learningEnabled = it })
+
+        content.addView(makeSwitch(
+            label = "Enable Number Row",
+            checked = prefsManager.numberRowEnabled
+        ) { prefsManager.numberRowEnabled = it })
+
+        content.addView(makeSwitch(
+            label = "Haptic Feedback",
+            checked = prefsManager.hapticEnabled
+        ) { prefsManager.hapticEnabled = it })
+
+        content.addView(makeSwitch(
+            label = "Key Sound",
+            checked = prefsManager.soundEnabled
+        ) { prefsManager.soundEnabled = it })
+
+        val sizeTitle = TextView(this).apply {
+            text = "Keyboard Size"
             textSize = 18f
-            setOnCheckedChangeListener { _, isChecked ->
-                prefsManager.learningEnabled = isChecked
-            }
+            setPadding(0, 36, 0, 8)
         }
-        layout.addView(learningSwitch)
+        content.addView(sizeTitle)
 
-        // Stats section
+        val sizeValue = TextView(this).apply {
+            text = "${prefsManager.keyboardScalePercent}%"
+            textSize = 14f
+            setPadding(0, 0, 0, 8)
+        }
+        content.addView(sizeValue)
+
+        val sizeSeek = SeekBar(this).apply {
+            max = 60
+            progress = prefsManager.keyboardScalePercent - 80
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    val value = progress + 80
+                    prefsManager.keyboardScalePercent = value
+                    sizeValue.text = "$value%"
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        content.addView(sizeSeek)
+
         val statsTitle = TextView(this).apply {
             text = "Statistics"
             textSize = 18f
             setPadding(0, 32, 0, 16)
         }
-        layout.addView(statsTitle)
+        content.addView(statsTitle)
 
         val wordsTyped = TextView(this).apply {
             text = "Words typed: ${prefsManager.totalWordsTyped}"
             textSize = 16f
             setPadding(0, 8, 0, 8)
         }
-        layout.addView(wordsTyped)
+        content.addView(wordsTyped)
 
         val accuracy = TextView(this).apply {
             text = "Prediction accuracy: ${String.format("%.1f", prefsManager.getPredictionAccuracy())}%"
             textSize = 16f
             setPadding(0, 8, 0, 8)
         }
-        layout.addView(accuracy)
+        content.addView(accuracy)
 
-        // Clear history button
         val clearButton = Button(this).apply {
             text = "Clear History"
             setOnClickListener {
                 userHistoryManager.clearHistory()
-                prefsManager.clearAll()
+                prefsManager.totalWordsTyped = 0
+                prefsManager.totalPredictions = 0
                 wordsTyped.text = "Words typed: 0"
                 accuracy.text = "Prediction accuracy: 0.0%"
             }
         }
-        layout.addView(clearButton)
+        content.addView(clearButton)
 
-        // About section
-        val aboutTitle = TextView(this).apply {
-            text = "About"
+        val featureTitle = TextView(this).apply {
+            text = "Current Features"
             textSize = 18f
             setPadding(0, 32, 0, 16)
         }
-        layout.addView(aboutTitle)
+        content.addView(featureTitle)
 
-        val aboutText = TextView(this).apply {
-            text = "AI Keyboard v1.0\n\nLearns your typing patterns to provide smarter predictions. All data stays on your device."
+        val featureText = TextView(this).apply {
+            text = "• Next-word suggestions\n• Learned word history\n• Number row toggle\n• Adjustable keyboard size\n• Haptic and sound toggles\n• Long-press backspace repeat"
             textSize = 14f
         }
-        layout.addView(aboutText)
+        content.addView(featureText)
 
-        setContentView(layout)
+        setContentView(scrollView)
+    }
+
+    private fun makeSwitch(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): Switch {
+        return Switch(this).apply {
+            text = label
+            isChecked = checked
+            textSize = 18f
+            setPadding(0, 8, 0, 8)
+            setOnCheckedChangeListener { _, isChecked -> onToggle(isChecked) }
+        }
     }
 
     override fun onDestroy() {

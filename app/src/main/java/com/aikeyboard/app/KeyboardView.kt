@@ -1,97 +1,127 @@
 package com.aikeyboard.app
 
-import android.content.Context
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.Typeface
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.PopupWindow
 import android.widget.TextView
 
-class KeyboardView(private val service: AIMethodService) : LinearLayout(service) {
-
-    private val keyRows = listOf(
-        listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
-        listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"),
-        listOf("shift", "z", "x", "c", "v", "b", "n", "m", "backspace"),
-        listOf("123", ",", "space", ".", "return")
-    )
+class KeyboardView(
+    private val service: AIMethodService,
+    private val preferencesManager: PreferencesManager
+) : LinearLayout(service) {
 
     private var isShifted = false
-    private var currentPopup: PopupWindow? = null
-    private var lastTouchedKey: String? = null
+    private val repeatHandler = Handler(Looper.getMainLooper())
+    private var backspaceRepeating = false
 
-    private val keyWidth = 72
-    private val keyHeight = 80
-    private val popupWidth = 120
-    private val popupHeight = 80
+    private val scale: Float
+        get() = preferencesManager.keyboardScalePercent / 100f
 
     private val normalBgColor = Color.parseColor("#4A4A4A")
     private val specialBgColor = Color.parseColor("#2D2D2D")
+    private val pressedBgColor = Color.parseColor("#707070")
     private val keyTextColor = Color.WHITE
-    private val shiftedBgColor = Color.parseColor("#6B6B6B")
 
-    private var currentSuggestions = listOf("", "", "")
+    private val keyWidth: Int
+        get() = (72 * scale).toInt()
+    private val keyHeight: Int
+        get() = (80 * scale).toInt()
+
+    private val backspaceRepeater = object : Runnable {
+        override fun run() {
+            if (!backspaceRepeating) return
+            service.handleBackspace()
+            repeatHandler.postDelayed(this, 60)
+        }
+    }
 
     init {
         orientation = VERTICAL
         setBackgroundColor(Color.parseColor("#1A1A1A"))
-        setPadding(8, 8, 8, 8)
-
-        setupKeyRows()
+        setPadding(dp(6), dp(6), dp(6), dp(6))
+        rebuildKeys()
     }
 
-    private fun setupKeyRows() {
-        for (row in keyRows) {
+    fun reloadLayout() {
+        rebuildKeys()
+    }
+
+    private fun rebuildKeys() {
+        removeAllViews()
+        buildRows().forEach { row ->
             val rowLayout = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_HORIZONTAL
             }
 
-            for (key in row) {
-                val keyView = createKeyView(key)
-                rowLayout.addView(keyView)
-            }
-
+            row.forEach { key -> rowLayout.addView(createKeyView(key)) }
             addView(rowLayout)
         }
+    }
+
+    private fun buildRows(): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        if (preferencesManager.numberRowEnabled) {
+            rows.add(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
+        }
+        rows.add(listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"))
+        rows.add(listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"))
+        rows.add(listOf("shift", "z", "x", "c", "v", "b", "n", "m", "backspace"))
+        rows.add(listOf("123", ",", "space", ".", "return"))
+        return rows
     }
 
     private fun createKeyView(key: String): View {
         val textView = TextView(context).apply {
             text = getKeyLabel(key)
             setTextColor(keyTextColor)
-            textSize = 20f
+            textSize = if (key == "space") 16f else 20f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setBackgroundColor(getKeyBackground(key))
+            isClickable = true
+            isFocusable = false
         }
 
         val size = getKeySize(key)
         textView.layoutParams = LayoutParams(size.first, size.second).apply {
-            setMargins(4, 4, 4, 4)
+            setMargins(dp(2), dp(2), dp(2), dp(2))
+        }
+
+        textView.setOnClickListener {
+            handleKeyPress(key)
+        }
+
+        textView.setOnLongClickListener {
+            if (key == "backspace") {
+                backspaceRepeating = true
+                repeatHandler.post(backspaceRepeater)
+                true
+            } else {
+                false
+            }
         }
 
         textView.setOnTouchListener { v, event ->
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    lastTouchedKey = key
-                    showPopup(v as TextView, key)
-                    v.alpha = 0.7f
+                    v.setBackgroundColor(pressedBgColor)
+                    false
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    dismissPopup()
-                    v.alpha = 1.0f
-                    if (event.action == MotionEvent.ACTION_UP) {
-                        handleKeyPress(key)
+                    v.setBackgroundColor(getKeyBackground(key))
+                    if (key == "backspace") {
+                        stopBackspaceRepeat()
                     }
+                    false
                 }
+                else -> false
             }
-            true
         }
 
         return textView
@@ -99,12 +129,12 @@ class KeyboardView(private val service: AIMethodService) : LinearLayout(service)
 
     private fun getKeyLabel(key: String): String {
         return when (key) {
-            "shift" -> if (isShifted) "⇧" else "⇧"
+            "shift" -> "⇧"
             "backspace" -> "⌫"
             "space" -> "space"
             "return" -> "↵"
             "123" -> "123"
-            else -> if (isShifted) key.uppercase() else key
+            else -> if (isShifted && key.length == 1 && key[0].isLetter()) key.uppercase() else key
         }
     }
 
@@ -117,62 +147,39 @@ class KeyboardView(private val service: AIMethodService) : LinearLayout(service)
 
     private fun getKeySize(key: String): Pair<Int, Int> {
         return when (key) {
-            "space" -> Pair(400, keyHeight)
-            "backspace", "return" -> Pair(140, keyHeight)
-            "shift" -> Pair(100, keyHeight)
-            "123" -> Pair(100, keyHeight)
+            "space" -> Pair((keyWidth * 5.4f).toInt(), keyHeight)
+            "backspace", "return" -> Pair((keyWidth * 1.7f).toInt(), keyHeight)
+            "shift", "123" -> Pair((keyWidth * 1.3f).toInt(), keyHeight)
             else -> Pair(keyWidth, keyHeight)
         }
     }
 
-    private fun showPopup(anchor: TextView, key: String) {
-        dismissPopup()
-
-        val popupView = TextView(context).apply {
-            text = getKeyLabel(key)
-            setTextColor(Color.WHITE)
-            textSize = 28f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setBackgroundColor(if (key == "shift") shiftedBgColor else normalBgColor)
-        }
-
-        currentPopup = PopupWindow(popupView, popupWidth, popupHeight).apply {
-            showAtLocation(anchor, Gravity.CENTER, 0, 0)
-        }
-    }
-
-    private fun dismissPopup() {
-        currentPopup?.dismiss()
-        currentPopup = null
-    }
-
     private fun handleKeyPress(key: String) {
+        service.onKeyPressed()
         when (key) {
             "shift" -> {
                 isShifted = !isShifted
-                refreshKeys()
+                rebuildKeys()
             }
             "backspace" -> service.handleBackspace()
             "space" -> service.handleSpace()
             "return" -> service.handleReturn()
-            "123" -> { /* TODO: Switch to number layout */ }
+            "123" -> { /* placeholder for symbols layout */ }
             else -> service.handleCharacter(if (isShifted) key.uppercase() else key)
         }
 
-        if (key != "shift" && isShifted) {
+        if (key != "shift" && isShifted && key.length == 1 && key[0].isLetter()) {
             isShifted = false
-            refreshKeys()
+            rebuildKeys()
         }
     }
 
-    private fun refreshKeys() {
-        removeAllViews()
-        setupKeyRows()
+    private fun stopBackspaceRepeat() {
+        backspaceRepeating = false
+        repeatHandler.removeCallbacks(backspaceRepeater)
     }
 
-    fun updateSuggestions(suggestions: List<String>) {
-        currentSuggestions = suggestions
-        service.updateSuggestions(suggestions)
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
     }
 }
