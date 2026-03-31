@@ -20,10 +20,12 @@ class AIMethodService : InputMethodService() {
     private lateinit var predictionEngine: PredictionEngine
     private lateinit var userHistoryManager: UserHistoryManager
     private lateinit var preferencesManager: PreferencesManager
+    private lateinit var autoCorrectEngine: AutoCorrectEngine
     private val handler = Handler(Looper.getMainLooper())
 
     private var currentWord = StringBuilder()
     private var currentSentence = ""
+    private var lastCommittedSeparator: String = ""
 
     private lateinit var suggestionBar: LinearLayout
     private var suggestionChips = mutableListOf<TextView>()
@@ -33,6 +35,7 @@ class AIMethodService : InputMethodService() {
         preferencesManager = PreferencesManager(this)
         userHistoryManager = UserHistoryManager(this)
         predictionEngine = PredictionEngine(userHistoryManager)
+        autoCorrectEngine = AutoCorrectEngine(userHistoryManager)
     }
 
     override fun onCreateInputView(): View {
@@ -78,6 +81,7 @@ class AIMethodService : InputMethodService() {
         super.onStartInput(attribute, restarting)
         currentWord.clear()
         currentSentence = ""
+        lastCommittedSeparator = ""
         updateSuggestions(listOf("", "", ""))
     }
 
@@ -108,43 +112,52 @@ class AIMethodService : InputMethodService() {
     }
 
     fun handleCharacter(char: String) {
-        currentInputConnection?.commitText(char, 1)
-        currentWord.append(char)
-        updateSuggestions(safePredictions(currentWord.toString()))
+        if (isWordCharacter(char)) {
+            currentInputConnection?.commitText(char, 1)
+            currentWord.append(char)
+            lastCommittedSeparator = ""
+            updateSuggestions(predictionsForCurrentInput())
+            return
+        }
+
+        handleSeparator(char)
     }
 
     fun handleBackspace() {
         if (currentWord.isNotEmpty()) {
             currentWord.deleteCharAt(currentWord.length - 1)
+        } else {
+            lastCommittedSeparator = ""
         }
         currentInputConnection?.deleteSurroundingText(1, 0)
-        updateSuggestions(safePredictions(currentWord.toString()))
+        updateSuggestions(predictionsForCurrentInput())
     }
 
     fun handleSpace() {
-        val word = currentWord.toString().trim()
-
-        if (word.isNotEmpty()) {
-            userHistoryManager.addTypedWord(word)
-            preferencesManager.incrementWordsTyped()
-            currentSentence = if (currentSentence.isBlank()) word else "$currentSentence $word"
-            userHistoryManager.addPhrase(currentSentence)
-            currentWord.clear()
+        if (currentWord.isNotEmpty()) {
+            commitCurrentWord(separator = " ")
+        } else {
+            if (lastCommittedSeparator == " ") {
+                currentInputConnection?.deleteSurroundingText(1, 0)
+                currentInputConnection?.commitText(". ", 1)
+                lastCommittedSeparator = ". "
+            } else {
+                currentInputConnection?.commitText(" ", 1)
+                lastCommittedSeparator = " "
+            }
         }
 
-        currentInputConnection?.commitText(" ", 1)
         updateSuggestions(safePredictions(""))
     }
 
     fun handleReturn() {
+        commitCurrentWord(separator = "")
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
 
-        if (currentSentence.isNotEmpty() && currentWord.isNotEmpty()) {
-            userHistoryManager.addPhrase("$currentSentence ${currentWord}")
-            currentWord.clear()
-        }
         currentSentence = ""
+        currentWord.clear()
+        lastCommittedSeparator = "\n"
         updateSuggestions(listOf("", "", ""))
     }
 
@@ -152,12 +165,11 @@ class AIMethodService : InputMethodService() {
         currentInputConnection?.deleteSurroundingText(currentWord.length, 0)
         currentInputConnection?.commitText("$suggestion ", 1)
 
-        userHistoryManager.addTypedWord(suggestion)
-        preferencesManager.incrementWordsTyped()
+        recordCommittedWord(suggestion)
         preferencesManager.incrementPredictions()
 
-        currentSentence = if (currentSentence.isBlank()) suggestion else "$currentSentence $suggestion"
         currentWord.clear()
+        lastCommittedSeparator = " "
         updateSuggestions(safePredictions(""))
     }
 
@@ -174,6 +186,68 @@ class AIMethodService : InputMethodService() {
         } catch (_: Exception) {
             listOf("", "", "")
         }
+    }
+
+    private fun predictionsForCurrentInput(): List<String> {
+        val prefix = currentWord.toString()
+        val autoCorrection = if (prefix.length >= 3) autoCorrectEngine.previewCorrection(prefix) else null
+        val predictions = safePredictions(prefix).toMutableList()
+
+        if (!autoCorrection.isNullOrBlank() && !autoCorrection.equals(prefix, ignoreCase = true)) {
+            predictions.removeAll { it.equals(autoCorrection, ignoreCase = true) }
+            predictions.add(0, autoCorrection)
+        }
+
+        return predictions.take(3).padEnd(3, "")
+    }
+
+    private fun handleSeparator(separator: String) {
+        val autoSpace = separator in setOf("!", "?", ".")
+        commitCurrentWord(separator = separator, autoAppendSpace = autoSpace)
+        updateSuggestions(safePredictions(""))
+    }
+
+    private fun commitCurrentWord(
+        separator: String,
+        autoAppendSpace: Boolean = false
+    ) {
+        val originalWord = currentWord.toString().trim()
+        val correction = autoCorrectEngine.getCorrection(originalWord)
+        val committedWord = correction ?: originalWord
+
+        if (originalWord.isNotEmpty()) {
+            if (correction != null && correction != originalWord) {
+                currentInputConnection?.deleteSurroundingText(originalWord.length, 0)
+                currentInputConnection?.commitText(committedWord, 1)
+            }
+            recordCommittedWord(committedWord)
+            currentWord.clear()
+        }
+
+        var separatorText = separator
+        if (autoAppendSpace && separator.isNotEmpty()) {
+            separatorText += " "
+        }
+
+        if (separatorText.isNotEmpty()) {
+            currentInputConnection?.commitText(separatorText, 1)
+            lastCommittedSeparator = separatorText
+        }
+    }
+
+    private fun recordCommittedWord(word: String) {
+        val cleanWord = word.trim()
+        if (cleanWord.isEmpty()) return
+
+        userHistoryManager.addTypedWord(cleanWord)
+        preferencesManager.incrementWordsTyped()
+        currentSentence = if (currentSentence.isBlank()) cleanWord else "$currentSentence $cleanWord"
+        userHistoryManager.addPhrase(currentSentence)
+        lastCommittedSeparator = ""
+    }
+
+    private fun isWordCharacter(char: String): Boolean {
+        return char.length == 1 && (char[0].isLetterOrDigit() || char == "'")
     }
 
     fun updateSuggestions(suggestions: List<String>) {
