@@ -19,7 +19,7 @@ class SettingsActivity : AppCompatActivity() {
         userHistoryManager = UserHistoryManager(this)
 
         val layout = LinearLayout(this).apply {
-            orientation = VERTICAL
+            orientation = android.widget.LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
         }
 
@@ -68,7 +68,7 @@ class SettingsActivity : AppCompatActivity() {
         val clearButton = Button(this).apply {
             text = "Clear History"
             setOnClickListener {
-                userHistoryManager.clearAll()
+                userHistoryManager.clearHistory()
                 prefsManager.clearAll()
                 wordsTyped.text = "Words typed: 0"
                 accuracy.text = "Prediction accuracy: 0.0%"
