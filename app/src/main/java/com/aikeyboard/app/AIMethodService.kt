@@ -124,20 +124,26 @@ class AIMethodService : InputMethodService() {
 
     fun onKeyPressed() {
         if (preferencesManager.hapticEnabled) {
-            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            vibrator?.let {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    it.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    it.vibrate(12)
+            try {
+                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                vibrator?.let {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        it.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        it.vibrate(12)
+                    }
                 }
+            } catch (_: Exception) {
             }
         }
 
         if (preferencesManager.soundEnabled) {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            audioManager?.playSoundEffect(AudioManager.FX_KEY_CLICK, 0.3f)
+            try {
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                audioManager?.playSoundEffect(AudioManager.FX_KEY_CLICK, 0.3f)
+            } catch (_: Exception) {
+            }
         }
     }
 
